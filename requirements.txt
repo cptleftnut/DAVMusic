@@ -10,3 +10,6 @@ librosa
 soundfile
 numpy
 accelerate
+descript-audiotools
+einops
+omegaconf
