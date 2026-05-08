@@ -1,0 +1,12 @@
+gradio
+torch
+torchaudio
+transformers
+sentencepiece
+tqdm
+huggingface_hub
+flash-attn
+librosa
+soundfile
+numpy
+accelerate

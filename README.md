@@ -142,14 +142,14 @@ Appen åbner automatisk i browseren på `http://localhost:7860`.
 ## ☁️ Google Colab (gratis GPU – stærkt anbefalet)
 
 Den nemmeste måde at komme i gang på er via Google Colab:
-
-**Fil:** `DAVMusic_Colab_Notebook.ipynb`
-
-1. Upload notebooken til [Google Colab](https://colab.research.google.com)
-2. Kør alle celler (Runtime → Run all)
-3. Når Gradio starter, klik på det offentlige link
-
-Colab giver dig gratis T4 GPU, hvilket er meget bedre end en telefon eller lokal CPU.
+	
+	**Fil:** `notebooks/DAVMusic_Colab_Notebook.ipynb`
+	
+	1. Åbn eller upload notebooken til [Google Colab](https://colab.research.google.com)
+	2. Kør alle celler (Runtime → Run all)
+	3. Når Gradio starter, klik på det offentlige link
+	
+	Colab giver dig gratis T4 GPU, hvilket er meget bedre end en telefon eller lokal CPU. Den nye struktur i repositoryet er optimeret til Colab.
 
 ## 🐧 Linux/WSL-brugere Quickstart
 Til en **hurtig start**, se video tutorials fra fællesskabet eller opret din egen.  
