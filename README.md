@@ -42,10 +42,6 @@ DAVMusic er en banebrydende serie af open-source foundation models designet til 
 * **2025.01.28 🫶**: Tak til Nicklas og fællesskabet for tutorials og bidrag.
 * **2025.01.26 🔥**: Vi har udgivet **DAVMusic** serien.
 
-* **2026.05.08 🚀 Nyttige Hugging Face Ressourcer**:
-    * [Reachy Mini Spaces](https://huggingface.co/spaces?filter=reachy_mini)
-    * [Reachy Mini Simulation Guide](https://huggingface.co/docs/reachy_mini/platforms/simulation/get_started)
-
 <br>
 
 ---

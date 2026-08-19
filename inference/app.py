@@ -4,23 +4,10 @@ DAVMusic Gradio Web UI
 ======================
 
 En brugervenlig web-grænseflade til DAVMusic / YuE-modellen.
+Opdateret med support for ICL (In-Context Learning) / Stemmekloning.
 
 Kør:
     python app.py
-
-Så åbner den automatisk i browseren (eller brug --share til offentlig link).
-
-Funktioner:
-- Tekstfelt til sangtekster med [verse], [chorus] support
-- Genre tags input
-- Antal segmenter slider
-- Mode valg (CoT / ICL)
-- Direkte afspilning af genereret lyd
-- Flere eksempler klar til brug
-
-Forudsætninger:
-- inference/ mappen med infer.py, tokenizer og xcodec skal være til stede
-- God GPU anbefales (24GB+ VRAM)
 """
 
 import gradio as gr
@@ -44,27 +31,16 @@ EXAMPLES = [
         "title": "Melankolsk Indie (dansk)",
         "lyrics": "[verse]\nRegnen falder stille på de tomme gader\nJeg tænker på dig igen i nat\n\n[chorus]\nKom hjem til mig, min kære\nJeg savner dig så meget",
         "genre": "melancholic male vocal indie folk acoustic emotional soft vocal"
-    },
-    {
-        "title": "Upbeat Dance / EDM",
-        "lyrics": "[verse]\nLights are flashing, bodies moving on the floor\nFeel the bass inside your core\n\n[drop]\nWe dance until the morning comes\nThis is where we belong",
-        "genre": "energetic female vocal edm dance upbeat electronic festival vocal bright"
-    },
-    {
-        "title": "Lo-fi Chill",
-        "lyrics": "[verse]\nRain tapping on the window pane\nCoffee in my hand, no rush today\n\n[chorus]\nJust breathing slow, letting go\nIn this quiet moment",
-        "genre": "chill male vocal lofi hiphop relaxed jazzy soft vocal warm"
     }
 ]
 
 def get_example(index):
     ex = EXAMPLES[index]
-    return ex["lyrics"], ex["genre"], ex["title"]
+    return ex["lyrics"], ex["genre"]
 
-def run_inference(lyrics, genre, segments, mode, progress=gr.Progress()):
+def run_inference(lyrics, genre, segments, mode, model_name, audio_prompt, progress=gr.Progress()):
     """
     Wrapper der kalder infer.py med de valgte parametre.
-    Returnerer sti til genereret lydfil (eller fejlbesked).
     """
     progress(0, desc="Forbereder...")
 
@@ -86,32 +62,39 @@ def run_inference(lyrics, genre, segments, mode, progress=gr.Progress()):
     cmd = [
         "python", "infer.py",
         "--cuda_idx", "0",
-        "--stage1_model", "m-a-p/YuE-s1-7B-anneal-en-cot",
+        "--stage1_model", model_name,
         "--stage2_model", "m-a-p/YuE-s2-1B-general",
         "--genre_txt", genre_file,
         "--lyrics_txt", lyrics_file,
         "--run_n_segments", str(segments),
-        "--stage2_batch_size", "2",   # Lavere for at spare hukommelse
+        "--stage2_batch_size", "2",
         "--output_dir", str(output_dir),
         "--max_new_tokens", "3000",
         "--repetition_penalty", "1.1"
     ]
 
     if mode == "ICL (med audio prompt)":
-        # ICL mode kan udvides senere med audio upload
-        cmd.append("--use_audio_prompt")  # Simpel version
+        if audio_prompt is None:
+            return None, "❌ Fejl: Du skal uploade en reference-lydfil for at bruge ICL mode."
+        
+        cmd.append("--use_audio_prompt")
+        cmd.extend(["--audio_prompt_path", audio_prompt])
+        
+        # Tip: YuE kræver ofte at man angiver om det er vokal eller mix
+        # Her antager vi dual-track eller single-track baseret på infer.py standard
+        # Man kan tilføje flere parametre her hvis nødvendigt
 
     try:
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=600  # 10 minutter timeout
+            timeout=900  # 15 minutter
         )
 
         progress(0.9, desc="Færdigbehandler...")
 
-        # Find genereret fil (infer.py laver normalt .wav eller .mp3)
+        # Find genereret fil
         generated_files = list(output_dir.glob("*.wav")) + list(output_dir.glob("*.mp3"))
         if generated_files:
             latest = max(generated_files, key=os.path.getctime)
@@ -120,11 +103,10 @@ def run_inference(lyrics, genre, segments, mode, progress=gr.Progress()):
             return None, f"❌ Ingen lydfil fundet.\n\nOutput:\n{result.stdout}\n\nFejl:\n{result.stderr}"
 
     except subprocess.TimeoutExpired:
-        return None, "⏱️ Timeout – genereringen tog for lang tid. Prøv færre segmenter eller kortere tekst."
+        return None, "⏱️ Timeout – genereringen tog for lang tid."
     except Exception as e:
         return None, f"❌ Fejl: {str(e)}"
     finally:
-        # Ryd op
         for f in [genre_file, lyrics_file]:
             if os.path.exists(f):
                 os.remove(f)
@@ -137,55 +119,77 @@ def create_ui():
     with gr.Blocks(
         title="DAVMusic – AI Musik Generator",
         theme=gr.themes.Soft(primary_hue="blue"),
-        css="""
-        .gradio-container { max-width: 900px !important; margin: auto; }
-        .example-btn { margin: 4px; }
-        """
+        css=".gradio-container { max-width: 950px !important; margin: auto; }"
     ) as demo:
 
         gr.Markdown("""
         # 🎵 DAVMusic – AI Musik Generator
-        **Bruger modellen:** m-a-p/YuE-s1-7B-anneal-en-cot  
-        Tilpasset til Nicklas / cptleftnut / DAVLm
+        **Tilpasset til Nicklas / cptleftnut / DAVLm**  
+        Nu med support for stemmekloning (ICL).
         """)
 
         with gr.Row():
             with gr.Column(scale=1):
-                gr.Markdown("### 📝 Sangtekster")
-                lyrics_input = gr.Textbox(
-                    label="Lyrics (brug [verse], [chorus], [bridge] osv.)",
-                    placeholder="Indtast sangtekster her...",
-                    lines=8,
-                    value=EXAMPLES[0]["lyrics"]
+                gr.Markdown("### 1. Model & Indstillinger")
+                model_input = gr.Dropdown(
+                    choices=[
+                        "m-a-p/YuE-s1-7B-anneal-en-cot", 
+                        "m-a-p/YuE-s1-7B-anneal-en-icl",
+                        "DAVLm/DAVMusic-s1-7B-anneal-en-cot",
+                        "DAVLm/DAVMusic-s1-7B-anneal-en-icl"
+                    ],
+                    value="m-a-p/YuE-s1-7B-anneal-en-cot",
+                    label="Vælg Model (Brug 'icl' til stemmekloning)"
                 )
-
-                gr.Markdown("### 🎨 Genre Tags")
-                genre_input = gr.Textbox(
-                    label="Genre tags (5 komponenter anbefales)",
-                    placeholder="energetic male vocal pop electronic upbeat",
-                    value=EXAMPLES[0]["genre"]
-                )
-
-                segments_slider = gr.Slider(
-                    minimum=1, maximum=4, value=2, step=1,
-                    label="Antal segmenter (1 = kort test, 2-3 = normal sang)"
-                )
-
+                
                 mode_radio = gr.Radio(
                     ["CoT (tekst kun)", "ICL (med audio prompt)"],
                     value="CoT (tekst kun)",
                     label="Generation Mode"
                 )
 
-                generate_btn = gr.Button("🚀 Generér Musik", variant="primary", size="lg")
+                audio_prompt_input = gr.Audio(
+                    label="Reference Lyd (kun til ICL)",
+                    type="filepath",
+                    visible=False
+                )
+                
+                # Vis/skjul lydfelt baseret på mode
+                def update_visibility(mode):
+                    return gr.update(visible=(mode == "ICL (med audio prompt)"))
+                
+                mode_radio.change(fn=update_visibility, inputs=mode_radio, outputs=audio_prompt_input)
+
+                segments_slider = gr.Slider(
+                    minimum=1, maximum=4, value=2, step=1,
+                    label="Antal segmenter"
+                )
 
             with gr.Column(scale=1):
-                gr.Markdown("### 🎧 Genereret Lyd")
-                audio_output = gr.Audio(label="Resultat", type="filepath")
-                status_output = gr.Textbox(label="Status / Log", lines=6, interactive=False)
+                gr.Markdown("### 2. Tekst & Genre")
+                lyrics_input = gr.Textbox(
+                    label="Lyrics ([verse], [chorus] osv.)",
+                    placeholder="Indtast sangtekster...",
+                    lines=6,
+                    value=EXAMPLES[0]["lyrics"]
+                )
+
+                genre_input = gr.Textbox(
+                    label="Genre tags",
+                    placeholder="energetic male vocal pop...",
+                    value=EXAMPLES[0]["genre"]
+                )
+
+                generate_btn = gr.Button("🚀 Generér Musik", variant="primary", size="lg")
+
+        with gr.Row():
+            with gr.Column():
+                gr.Markdown("### 3. Resultat")
+                audio_output = gr.Audio(label="Genereret Lyd", type="filepath")
+                status_output = gr.Textbox(label="Status Log", lines=4, interactive=False)
 
         # Eksempler
-        gr.Markdown("### ✨ Hurtige eksempler (klik for at indlæse)")
+        gr.Markdown("### ✨ Hurtige eksempler")
         with gr.Row():
             for i, ex in enumerate(EXAMPLES):
                 btn = gr.Button(ex["title"], size="sm")
@@ -195,20 +199,12 @@ def create_ui():
                     outputs=[lyrics_input, genre_input]
                 )
 
-        # Kør inference når knappen trykkes
         generate_btn.click(
             fn=run_inference,
-            inputs=[lyrics_input, genre_input, segments_slider, mode_radio],
+            inputs=[lyrics_input, genre_input, segments_slider, mode_radio, model_input, audio_prompt_input],
             outputs=[audio_output, status_output],
             show_progress=True
         )
-
-        gr.Markdown("""
-        ---
-        **Tip:** Start altid med 1 segment og kort tekst for at teste.  
-        Fulde sange kræver meget GPU-hukommelse (24GB+ anbefales).  
-        Har du problemer? Tjek README eller kør `python generate.py --help`.
-        """)
 
     return demo
 
@@ -217,6 +213,5 @@ if __name__ == "__main__":
     demo.launch(
         server_name="0.0.0.0",
         server_port=7860,
-        share=True,           # Giver offentligt link (nyttigt i Colab)
-        inbrowser=True
+        share=True
     )
